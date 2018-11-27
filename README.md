@@ -1,4 +1,4 @@
-# govcms_jobs Drupal 7 build
+# govcms_jobs d7 build
 
 This module is a custom module that can be installed on a vanilla govCMS 2.23 (7.x) instance. There is also a D8 version of this module if you prefer that version. See https://github.com/senuamedia/govcms_jobs_8.
 
