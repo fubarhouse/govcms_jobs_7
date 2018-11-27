@@ -1,0 +1,469 @@
+<?php
+require_once drupal_get_path('module','govcms_jobs').'/vendor/autoload.php';
+require_once drupal_get_path('module', 'govcms_jobs') . '/GovcmsJobsApiClient.php';
+
+/**
+ * Implements hook_menu().
+ */
+function govcms_jobs_menu() {
+  $items = array();
+  // $items['test'] = array(
+  //   'page callback' => 'govcms_jobs_api_put_vacancy',
+  //   'access arguments' => array(true),
+  // );
+
+  $items['admin/structure/govcms_jobs'] = array(
+    'title' => 'Govcms jobs',
+    'description' => 'Configure user accounts.',
+    'page callback' => 'system_admin_menu_block_page',
+    'access arguments' => array('access administration pages'),
+    'file' => 'system.admin.inc',
+    'file path' => drupal_get_path('module', 'system'),
+  );
+  $items['admin/structure/govcms_jobs/settings'] = array(
+    'title' => 'Govcms jobs settings',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('govcms_jobs_settings_form'),
+    'access arguments' => array('access administration pages'),
+  );
+  $items['admin/structure/govcms_jobs/fapi'] = array(
+    'title' => 'Govcms Jobs FAPI Page',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('govcms_jobs_fapi_form'),
+    'access arguments' => array('access administration pages'),
+  );
+  $items['admin/structure/govcms_jobs/jobs/add'] = array(
+    'title' => 'Govcms add jobs',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('govcms_jobs_add_form'),
+    'access arguments' => array('access administration pages'),
+    'file' => 'govcms_jobs.form.inc',
+  );
+
+  $items['admin/structure/govcms_jobs/jobs/edit'] = array(
+    'title' => 'Govcms edit jobs',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('govcms_jobs_add_form',1),
+    'access arguments' => array('access administration pages'),
+    'file' => 'govcms_jobs.form.inc',
+  );
+
+  $items['jobs-location/autocomplete'] = array(
+    'title' => 'Autocomplete for location',
+    'page callback' => 'govcms_jobs_autocomplete_ajax',
+    'access arguments' => array(true),
+    'type' => MENU_CALLBACK
+  );
+  $items['autocomplete/jobs-location'] = array(
+    'title' => 'Autocomplete for location',
+    'page callback' => 'govcms_jobs_location_autocomplete',
+    'page arguments' => array(2),
+    'access callback' => true,
+    'type' => MENU_CALLBACK
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_node_info().
+ */
+function govcms_jobs_node_info() {
+  return array(
+    'govcms_jobs' => array(
+      'name' => t('govCMS Jobs'),
+      'base' => 'govcms_jobs',
+      'description' => t('This is a job node type with a few fields.'),
+      'title_label' => t('Jobs Title'),
+      // We'll set the 'locked' attribute to TRUE, so users won't be
+      // able to change the machine name of our content type.
+      'locked' => true,
+    ),
+  );
+}
+
+/**
+ * @param $node
+ * @param $form_state
+ * @return array
+ *
+ * Implements hook_form().
+ * Display a node editing form.
+ * This is a node-type-specific hook, which is invoked only for the node type being affected.
+ *
+ */
+function govcms_jobs_form($node, $form_state) {
+  return node_content_form($node, $form_state);
+}
+
+/**
+ * @return array
+ *
+ * Settings form for the apsjobs API
+ * Initially set to the development APSJobs path
+ */
+function govcms_jobs_settings_form(){
+  $form = array();
+  $form['basic_uri'] = array(
+    '#title' => 'Basic Uri',
+    '#type' => 'textfield',
+    '#default_value' => variable_get('govcms_jobs_base_uri', 'https://development.apsjobs.gov.au'),
+    '#required' => false,
+  );
+
+  $form['basic_auth_username'] = array(
+    '#title' => 'Basic Authentication User Name',
+    '#type' => 'textfield',
+    '#default_value' => variable_get('govcms_jobs_basic_auth_username', ''),
+    '#required' => false,
+  );
+
+  $form['basic_auth_password'] = array(
+    '#title' => 'Basic Authentication User Name Password',
+    '#type' => 'textfield',
+    '#default_value' => variable_get('govcms_jobs_basic_auth_password', ''),
+    '#required' => false,
+  );
+
+  $form['user'] = array(
+    '#title' =>'User',
+    '#type' => 'textfield',
+    '#default_value' => variable_get('govcms_jobs_api_username',''),
+    '#required'=>true,
+  );
+  $form['password'] = array(
+    '#title' => 'Password',
+    '#required'=>true,
+    '#default_value' => variable_get('govcms_jobs_api_password', ''),
+    '#type'  => 'textfield',
+  );
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Login',
+  );
+  return $form;
+}
+
+/**
+ * @param $form
+ * @param $form_state
+ *
+ * Validation function on settings form.
+ */
+function govcms_jobs_settings_form_validate($form,&$form_state){
+  $base_uri = $form_state['values']['basic_uri'];
+  $basic_auth_username = $form_state['values']['basic_auth_username'];
+  $basic_auth_password = $form_state['values']['basic_auth_password'];
+  $user = $form_state['values']['user'];
+  $pass = $form_state['values']['password'];
+
+  $authorization = null;
+  if (!empty($basic_auth_username)) {
+    $authorization = 'Basic ' . base64_encode($basic_auth_username . ':' . $basic_auth_password);
+  }
+
+  if (isset($_SESSION['api_token'])) {
+    unset($_SESSION['api_token']);
+  }
+  if (isset($_SESSION['api_cookie'])) {
+    unset($_SESSION['api_cookie']);
+  }
+  $client =  new GovcmsJobsApiClient($base_uri,$user , $pass,$authorization);
+  if (!$client->login()){
+    form_set_error('password','Can not login to the API. The username or password was incorrect.');
+  }
+}
+
+/**
+ * @param $form
+ * @param $form_state
+ *
+ * Storage for settings using vset().
+ */
+function govcms_jobs_settings_form_submit($form, &$form_state)
+{
+  $base_uri = $form_state['values']['basic_uri'];
+  $basic_auth_username = $form_state['values']['basic_auth_username'];
+  $basic_auth_password = $form_state['values']['basic_auth_password'];
+  $user = $form_state['values']['user'];
+  $pass = $form_state['values']['password'];
+  variable_set('govcms_jobs_api_username', $form_state['values']['user']);
+  variable_set('govcms_jobs_api_password', $form_state['values']['password']);
+  variable_set('govcms_jobs_base_uri', $base_uri);
+  if ($basic_auth_password){
+    variable_set('govcms_jobs_basic_auth_username', $form_state['values']['basic_auth_username']);
+    variable_set('govcms_jobs_basic_auth_password', $form_state['values']['basic_auth_password']);
+    variable_set('govcms_jobs_authorization', 'Basic ' . \base64_encode($basic_auth_username . ':' . $basic_auth_password));
+  }
+  else{
+    variable_del('govcms_jobs_basic_auth_username');
+    variable_del('govcms_jobs_basic_auth_password');
+    variable_del('govcms_jobs_authorizatio');
+  }
+    drupal_set_message('The configuration options have been saved.');
+}
+
+/**
+ * @return mixed
+ *
+ * Defining 'wizard' steps for initial sync
+ */
+function govcms_jobs_fapi_form(){
+  $form['step1'] = [
+    '#type' => 'fieldset',
+    '#title' => 'Sync all taxonomy structure',
+  ];
+
+  $form['step1']['get_taxonomy'] = [
+    '#type' => 'submit',
+    '#value' => 'Get taxonomy data',
+  ];
+
+  $form['step2'] = [
+    '#type' => 'fieldset',
+    '#title' => 'Sync all current jobs',
+  ];
+
+  $form['step2']['get_job'] = [
+    '#type' => 'submit',
+    '#value' => 'Get job data',
+  ];
+
+  $form['step3'] = [
+    '#type' => 'fieldset',
+    '#title' => 'Sync all agencies based on access',
+  ];
+
+  $form['step3']['get_agency'] = [
+    '#type' => 'submit',
+    '#value' => 'Get agency data based on access',
+  ];
+
+  $options = govcms_jobs_getJobsDataFetched();
+
+  $header = [
+    'aps_id' => t('APS ID'),
+    'title' => t('Job Title'),
+    'operation' => t('Operation'),
+  ];
+
+  $form['step2']['list_job_data'] = [
+    '#type' => 'tableselect',
+    '#title' => t('Jobs Data fetched from APS API'),
+    '#header' => $header,
+    '#options' => $options,
+    '#empty' => t('No jobs were fetched'),
+  ];
+  return $form;
+}
+
+/**
+ * @param $form
+ * @param $form_state
+ *
+ * Functions for processing each step
+ */
+function govcms_jobs_fapi_form_submit($form,&$form_state){
+  switch ($form_state['input']['op']){
+    case "Get taxonomy":
+      $client = new GovcmsJobsApiClient(variable_get('govcms_jobs_base_uri', ''),variable_get('govcms_jobs_api_username', ''), variable_get('govcms_jobs_api_password', ''), variable_get('govcms_jobs_authorization', ''));
+      $data = $client->getTaxonomies();
+
+      if ($data === false) {
+        return;
+      }
+      foreach ($data as $aps_voc => $terms) {
+        $mapped_voc = govcms_jobs_getMappedVocabulary($aps_voc);
+        if (!empty($mapped_voc)) {
+          foreach ($terms as $value) {
+            govcms_jobs_createTaxonomyTerm($mapped_voc, $value);
+          }
+        }
+      }
+
+      drupal_set_message('Done');
+      break;
+    case "Get job":
+      $client = new GovcmsJobsApiClient(variable_get('govcms_jobs_base_uri', ''), variable_get('govcms_jobs_api_username', ''), variable_get('govcms_jobs_api_password', ''), variable_get('govcms_jobs_authorization', ''));
+      $data = $client->getVacancies();
+
+      if ($data === false) {
+        return;
+      }
+      foreach ($data->vacancies as $value) {
+        if (!govcms_jobs_isFetched('job', $value->vacancy_id)) {
+          govcms_jobs_addMappingData('job', $value->vacancy_id, json_encode($value));
+        }
+      }
+      drupal_set_message('Done');
+      break;
+    case "Get agency":
+      $client = new GovcmsJobsApiClient(variable_get('govcms_jobs_base_uri', ''), variable_get('govcms_jobs_api_username', ''), variable_get('govcms_jobs_api_password', ''), variable_get('govcms_jobs_authorization', ''));
+      $data = $client->getAgencies();
+
+      if ($data === false) {
+        return;
+      }
+      // print_r($data);
+      // exit;
+      foreach ($data->agencies as $value) {
+        if (!govcms_jobs_isFetched('agency', $value->nid)) {
+          govcms_jobs_addMappingData('agency', $value->nid, json_encode($value));
+        }
+      }
+      drupal_set_message('Done');
+      break;
+  }
+}
+
+/**
+ * @param $aps_voc
+ * @return null
+ *
+ * Taxonomy map.
+ */
+function govcms_jobs_getMappedVocabulary($aps_voc)
+{
+  $map = [
+    'aps_job_levels' => 'job_levels',
+    'aps_job_categories' => 'job_categories',
+    'aps_engagement_types' => 'engagement_types',
+    'aps_working_hours' => 'working_hours',
+    'aps_clearance_levels' => 'clearance_levels',
+    'position_initiatives_and_programs' => 'position_initiatives_and_programs',
+  ];
+  return isset($map[$aps_voc]) ? $map[$aps_voc] : null;
+}
+
+/**
+ * @param $v_machine_name
+ * @param $value
+ *
+ * Adding terms into taxonomy
+ */
+function govcms_jobs_createTaxonomyTerm($v_machine_name, $value)
+{
+  if (!govcms_jobs_getMappedId($value->tid)) {
+    $term = new stdClass();
+    $term->name = $value->name;
+    $vocabulary=taxonomy_vocabulary_machine_name_load($v_machine_name);
+    $term->vid = $vocabulary->vid;
+    try {
+      taxonomy_term_save($term);
+      govcms_jobs_addMappingData('taxonomy', $value->tid, json_encode($value), $term->tid);
+    } catch (Exception $e) {
+      drupal_set_message($e->getMessage,'error');
+    }
+  }
+}
+
+/**
+ * @param $aps_id
+ * @return mixed
+ *
+ *
+ */
+function govcms_jobs_getMappedId($aps_id)
+{
+  $query = db_select('govcms_jobs_mapping', 'm')
+    ->condition('type', 'taxonomy')
+    ->condition('aps_id', $aps_id)
+    ->fields('m', array('current_id'));
+  $current_id = $query->execute()->fetchField();
+  return $current_id;
+}
+
+/**
+ * @param $type
+ * @param $aps_id
+ * @param $data
+ * @param null $current_id
+ * @throws Exception
+ *
+ */
+function govcms_jobs_addMappingData($type, $aps_id, $data, $current_id=null)
+{
+  $status = $current_id ? 1 : 0;
+  $entry = compact('type', 'aps_id', 'data', 'current_id', 'status');
+  db_insert('govcms_jobs_mapping')->fields($entry)->execute();
+}
+
+/**
+ * @param $type
+ * @param $aps_id
+ * @return mixed
+ */
+function govcms_jobs_isFetched($type, $aps_id){
+  $query = db_select('govcms_jobs_mapping', 'm')
+    ->condition('type', $type)
+    ->condition('aps_id', $aps_id)
+    ->fields('m', array('id'));
+  $id = $query->execute()->fetchField();
+  return $id;
+}
+
+/**
+ * @return array
+ *
+ *
+ */
+function govcms_jobs_getJobsDataFetched()
+{
+  $query = db_select('govcms_jobs_mapping', 'm')
+    ->condition('type', 'job')
+    ->fields('m');
+  $rows = $query->execute();
+  $fetched_data = [];
+  foreach ($rows as $value) {
+    $value_data = json_decode($value->data);
+    if (!($value->current_id)) {
+      $create_link = array('data' => '<a href="/admin/structure/govcms_jobs/jobs/add?apsid=' . $value->aps_id . '"> Create job</a>');
+    }
+    else {
+      $create_link = array('data' => '<a href="/node/' . $value->current_id . '"> View </a>');
+    }
+
+    $fetched_data[] = [
+      'aps_id' => $value->aps_id,
+      'title' => $value_data->job_title,
+      'operation' =>  $create_link,
+    ];
+  }
+  return $fetched_data;
+}
+
+/**
+ * Ajax autocomplete for location data.
+ */
+function govcms_jobs_autocomplete_ajax(){
+  $params = drupal_get_query_parameters();
+  $term = $params['term'];
+  govcms_jobs_location_autocomplete($term);
+}
+
+
+/**
+ * @param null $term
+ *
+ * Autocomplete processing
+ */
+function govcms_jobs_location_autocomplete($term = null){
+  $term = trim($term);
+  $term = '%'. $term . '%';
+  $matches = array();
+  if ($term != '%%') {
+    $query = db_select('govcms_jobs_location','l')
+    ->condition('title',$term,'LIKE')
+    ->fields('l',array('title','postcode','place_name','state_code'))
+    ->range(0,10)
+    ->execute();
+    $results = $query->fetchAll();
+    foreach ($results as $result) {
+      $location = $result->place_name . ', ' . $result->state_code . ', ' . $result->postcode;
+      $matches[$location] = strtoupper($location);
+    }
+  }
+
+  drupal_json_output($matches);
+  drupal_exit();
+}

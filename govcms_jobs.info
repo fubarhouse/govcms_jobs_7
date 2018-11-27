@@ -1,0 +1,5 @@
+name = GovCMS Jobs
+description = Default module to manage jobs and sync with the APSjobs website
+package = "GovCMS"
+core = 7.x
+dependencies[] = jquery_update

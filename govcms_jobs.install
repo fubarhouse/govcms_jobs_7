@@ -1,0 +1,892 @@
+<?php
+
+/**
+ * @throws Exception
+ * @throws FieldException
+ *
+ * Implements hook_enable().
+ */
+function govcms_jobs_enable() {
+  // Create all the fields we are adding to our content type.
+  govcms_jobs_import_location();
+  foreach (_govcms_jobs_installed_fields() as $field) {
+    field_create_field($field);
+  }
+
+  // Create all the instances for our fields.
+  foreach (_govcms_jobs_installed_instances() as $instance) {
+    $instance['entity_type'] = 'node';
+    $instance['bundle'] = 'govcms_jobs';
+    field_create_instance($instance);
+  }
+
+  // Create term, ..
+  if (!taxonomy_vocabulary_machine_name_load('job_levels')) {
+    $vocabulary = new stdClass();
+    $vocabulary->name = 'Job Levels';
+    $vocabulary->description = '';
+    $vocabulary->machine_name = 'job_levels';
+    taxonomy_vocabulary_save($vocabulary);
+  }
+  if (!taxonomy_vocabulary_machine_name_load('job_categories')) {
+    $vocabulary = new stdClass();
+    $vocabulary->name = 'Job Categories';
+    $vocabulary->description = '';
+    $vocabulary->machine_name = 'job_categories';
+    taxonomy_vocabulary_save($vocabulary);
+  }
+  if (!taxonomy_vocabulary_machine_name_load('engagement_types')) {
+    $vocabulary = new stdClass();
+    $vocabulary->name = 'Engagement Types';
+    $vocabulary->description = '';
+    $vocabulary->machine_name = 'engagement_types';
+    taxonomy_vocabulary_save($vocabulary);
+  }
+  if (!taxonomy_vocabulary_machine_name_load('working_hours')) {
+    $vocabulary = new stdClass();
+    $vocabulary->name = 'Working hours';
+    $vocabulary->description = '';
+    $vocabulary->machine_name = 'working_hours';
+    taxonomy_vocabulary_save($vocabulary);
+  }
+  if (!taxonomy_vocabulary_machine_name_load('position_initiatives_and_programs')) {
+    $vocabulary = new stdClass();
+    $vocabulary->name = 'Position Initiatives and Programs';
+    $vocabulary->description = '';
+    $vocabulary->machine_name = 'position_initiatives_and_programs';
+    taxonomy_vocabulary_save($vocabulary);
+  }
+  if (!taxonomy_vocabulary_machine_name_load('clearance_levels')) {
+    $vocabulary = new stdClass();
+    $vocabulary->name = 'Clearance level';
+    $vocabulary->description = '';
+    $vocabulary->machine_name = 'clearance_levels';
+    taxonomy_vocabulary_save($vocabulary);
+  }
+
+}
+
+/**
+ * @throws Exception
+ *
+ * Implements hook_disable().
+ *
+ */
+function govcms_jobs_disable() {
+  $types = array(
+    'govcms_jobs',
+  );
+  foreach ($types as $type) {
+    // First, delete nodes
+    $results = db_select('node', 'n')
+      ->fields('n', array('nid'))
+      ->condition('type', $type)
+      ->execute();
+    foreach ($results as $result) {
+      $nids[] = $result->nid;
+    }
+    if (!empty($nids)) {
+      node_delete_multiple($nids);
+      drupal_set_message(t('%count nodes has been deleted.', array('%count' => count($nids))));
+    }
+    // Then, delete content type
+    if (node_type_load($type)) {
+      node_type_delete($type);
+      variable_del('node_preview_' . $type);
+      drupal_set_message(t('%type content type has been deleted.', array('%type' => $type)));
+    }
+    if ($tax_voc=taxonomy_vocabulary_machine_name_load('job_levels')) {
+      taxonomy_vocabulary_delete($tax_voc->vid);
+    }
+    if ($tax_voc=taxonomy_vocabulary_machine_name_load('job_categories')) {
+      taxonomy_vocabulary_delete($tax_voc->vid);
+    }
+    if ($tax_voc=taxonomy_vocabulary_machine_name_load('engagement_types')) {
+      taxonomy_vocabulary_delete($tax_voc->vid);
+    }
+    if ($tax_voc=taxonomy_vocabulary_machine_name_load('working_hours')) {
+      taxonomy_vocabulary_delete($tax_voc->vid);
+    }
+    if ($tax_voc=taxonomy_vocabulary_machine_name_load('position_initiatives_and_programs')) {
+      taxonomy_vocabulary_delete($tax_voc->vid);
+    }
+    if ($tax_voc=taxonomy_vocabulary_machine_name_load('clearance_levels')) {
+      taxonomy_vocabulary_delete($tax_voc->vid);
+    }
+  }
+
+  node_types_rebuild();
+  menu_rebuild();
+
+  $fields = array();
+  $instances = field_info_instances('node', 'govcms_jobs');
+  foreach ($instances as $instance) {
+    if (!in_array($instance['field_name'], $fields)) {
+      $fields[] = $instance['field_name'];
+    }
+    field_delete_instance($instance);
+  }
+
+  foreach ($fields as $field_name) {
+    field_delete_field($field_name);
+  }
+  field_cron();
+}
+
+/**
+ * @return array
+ *
+ * Define the fields for our content type.
+ *
+ */
+function _govcms_jobs_installed_fields() {
+  return array(
+    'field_position_number' => array(
+      'field_name' => 'field_position_number',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_agencies' => array(
+      'field_name' => 'field_agencies',
+      'cardinality' => -1,
+      'type' => 'text',
+      'settings' => array(
+        'max_length' => 60,
+      ),
+    ),
+    'field_locations' => array(
+      'field_name' => 'field_locations',
+      'cardinality' => -1,
+      'type' => 'text',
+    ),
+    'field_publication_date' => array(
+      'field_name' => 'field_publication_date',
+      'cardinality' => 1,
+      'type' => 'date',
+    ),
+    'field_closing_date' => array(
+      'field_name' => 'field_closing_date',
+      'cardinality' => 1,
+      'type' => 'date',
+    ),
+    'field_under_7_days_check' => array(
+      'field_name' => 'field_under_7_days_check',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_working_hours' => array(
+      'field_name' => 'field_working_hours',
+      'cardinality' => -1,
+      'type' => 'text',
+    ),
+    'field_engagement_types' => array(
+      'field_name' => 'field_engagement_types',
+      'cardinality' => -1,
+      'type' => 'text',
+    ),
+    'field_job_categories' => array(
+      'field_name' => 'field_job_categories',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_broadband' => array(
+      'field_name' => 'field_broadband',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_job_levels' => array(
+      'field_name' => 'field_job_levels',
+      'cardinality' => -1,
+      'type' => 'text',
+    ),
+    'field_salary_min' => array(
+      'field_name' => 'field_salary_min',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_salary_max' => array(
+      'field_name' => 'field_salary_max',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_duties' => array(
+      'field_name' => 'field_duties',
+      'cardinality' => 1,
+      'type' => 'text',
+      'settings' => array(
+        'max_length' => 1000,
+      ),
+    ),
+    'field_eligibility' => array(
+      'field_name' => 'field_eligibility',
+      'cardinality' => 1,
+      'type' => 'text',
+      'settings' => array(
+        'max_length' => 1000,
+      ),
+    ),
+    'field_notes' => array(
+      'field_name' => 'field_notes',
+      'cardinality' => 1,
+      'type' => 'text',
+      'settings' => array(
+        'max_length' => 1000,
+      ),
+    ),
+    'field_clearance_level' => array(
+      'field_name' => 'field_clearance_level',
+      'cardinality' => -1,
+      'type' => 'text',
+    ),
+    'field_requires_outcome' => array(
+      'field_name' => 'field_requires_outcome',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_apply_url' => array(
+      'field_name' => 'field_apply_url',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_considered_rr' => array(
+      'field_name' => 'field_considered_rr',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_contact_name' => array(
+      'field_name' => 'field_contact_name',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_contact_phone' => array(
+      'field_name' => 'field_contact_phone',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_contact_email' => array(
+      'field_name' => 'field_contact_email',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_initiatives_and_programs' => array(
+      'field_name' => 'field_initiatives_and_programs',
+      'cardinality' => -1,
+      'type' => 'text',
+    ),
+    'field_notice_number' => array(
+      'field_name' => 'field_notice_number',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_moderation' => array(
+      'field_name' => 'field_moderation',
+      'cardinality' => 1,
+      'type' => 'text',
+      'settings' => array(
+        'allowed_values' => array(
+          'draft'=>'Draft',
+          'needs_review'=>'Awaiting Approval',
+          'approved' => 'Approved',
+          'rejected' => 'Rejected',
+          'published' => 'Published',
+          'closed'=>'Closed'
+        ),
+        'allowed_values_function' => '',
+      ),
+    ),
+    'field_editorial_instruction' => array(
+      'field_name' => 'field_editorial_instruction',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+    'field_approver' => array(
+      'field_name' => 'field_approver',
+      'cardinality' => 1,
+      'type' => 'text',
+    ),
+  );
+}
+
+/**
+ * @return array
+ *
+ * Define the field instances for our content type.
+ *
+ */
+function _govcms_jobs_installed_instances()
+{
+  return array(
+    'field_position_number' => array(
+      'field_name' => 'field_position_number',
+      'label' => t('Position number'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_agencies' => array(
+      'field_name' => 'field_agencies',
+      'label' => t('Agencies'),
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'govcms_jobs_colors',
+        ),
+      ),
+    ),
+    'field_locations' => array(
+      'field_name' => 'field_locations',
+      'label' => t('Locations'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_publication_date' => array(
+      'field_name' => 'field_publication_date',
+      'label' => t('Publication date'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_closing_date' => array(
+      'field_name' => 'field_closing_date',
+      'label' => t('Closing date'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_under_7_days_check' => array(
+      'field_name' => 'field_under_7_days_check',
+      'label' => t('Check 7 days'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_working_hours' => array(
+      'field_name' => 'field_working_hours',
+      'label' => t('Working hours'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_engagement_types' => array(
+      'field_name' => 'field_engagement_types',
+      'label' => t('Egagement typpes'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_job_categories' => array(
+      'field_name' => 'field_job_categories',
+      'label' => t('job categories'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_broadband' => array(
+      'field_name' => 'field_broadband',
+      'label' => t('Broadband'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_job_levels' => array(
+      'field_name' => 'field_job_levels',
+      'label' => t('job level'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_salary_min' => array(
+      'field_name' => 'field_salary_min',
+      'label' => t('Salary min'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_salary_max' => array(
+      'field_name' => 'field_salary_max',
+      'label' => t('Salary max'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_duties' => array(
+      'field_name' => 'field_duties',
+      'label' => t('Duties'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_eligibility' => array(
+      'field_name' => 'field_eligibility',
+      'label' => t('Eligibility'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_notes' => array(
+      'field_name' => 'field_notes',
+      'label' => t('Notes'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_clearance_level' => array(
+      'field_name' => 'field_clearance_level',
+      'label' => t('Clearance level'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_requires_outcome' => array(
+      'field_name' => 'field_requires_outcome',
+      'label' => t('Requires outcome'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_apply_url' => array(
+      'field_name' => 'field_apply_url',
+      'label' => t('Apply url'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_considered_rr' => array(
+      'field_name' => 'field_considered_rr',
+      'label' => t('Considered rr'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_contact_name' => array(
+      'field_name' => 'field_contact_name',
+      'label' => t('Ccontact name'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_contact_phone' => array(
+      'field_name' => 'field_contact_phone',
+      'label' => t('Contact phone'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_contact_email' => array(
+      'field_name' => 'field_contact_email',
+      'label' => t('Contact email'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_initiatives_and_programs' => array(
+      'field_name' => 'field_initiatives_and_programs',
+      'label' => t('Initiatives and programs'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_notice_number' => array(
+      'field_name' => 'field_notice_number',
+      'label' => t('Notice number'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_moderation' => array(
+      'field_name' => 'field_moderation',
+      'label' => t('Moderation'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_editorial_instruction' => array(
+      'field_name' => 'field_editorial_instruction',
+      'label' => t('Editorial instruction'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+    'field_approver' => array(
+      'field_name' => 'field_approver',
+      'label' => t('Approver'),
+      'type' => 'text',
+      'widget' => array(
+        'type' => 'text_textfield',
+      ),
+      'display' => array(
+        'govcms_jobs_list' => array(
+          'label' => 'hidden',
+          'type' => 'hidden',
+        ),
+      ),
+    ),
+  );
+}
+
+/**
+ * @return mixed
+ *
+ * Implements hook_schema().
+ *
+ */
+function govcms_jobs_schema()
+{
+  $schema['govcms_jobs_mapping'] = [
+    'description' => 'Mapping id of data (job, taxonomy) between current site and APSjobs site',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'not null' => true,
+        'description' => 'Primary Key.',
+      ],
+      'type' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => true,
+        'default' => '',
+        'description' => 'Type of data (job, taxonomy)',
+      ],
+      'aps_id' => [
+        'type' => 'int',
+        'not null' => true,
+        'default' => 0,
+        'description' => 'Id of data in APSjobs site',
+      ],
+      'data' => [
+        'type' => 'text',
+        'size' => 'big',
+      ],
+      'current_id' => [
+        'type' => 'int',
+        'description' => 'Id of data created in current site',
+      ],
+      'status' => array(
+        'type' => 'int',
+        'not null' => true,
+        'default' => 0,
+      ),
+      'created' => array(
+        'type' => 'int',
+        'not null' => true,
+        'default' => 0,
+      ),
+      'changed' => array(
+        'type' => 'int',
+        'not null' => true,
+        'default' => 0,
+      ),
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'type' => ['type'],
+      'aps_id' => ['aps_id'],
+      'current_id' => ['current_id'],
+    ],
+  ];
+
+  $schema['govcms_jobs_location'] = array(
+    'description' => 'Location base table',
+    'fields' => [
+      'id' => array(
+        'type' => 'serial',
+        'not null' => true,
+        'description' => 'Primary Key.',
+      ),
+      'title' => array(
+        'type' => 'text',
+        'not null' => true,
+        'description' => 'title',
+      ),
+      'postcode' => array(
+        'type' => 'int',
+        'not null' => true,
+        'description' => 'post code',
+      ),
+      'place_name' => array(
+        'type' => 'text',
+        'not null' => true,
+        'description' => 'place name',
+      ),
+      'state_name' => array(
+        'type' => 'text',
+        'not null' => true,
+        'description' => 'state name',
+      ),
+      'state_code' => array(
+        'type' => 'text',
+        'not null' => true,
+        'description' => 'state code',
+      ),
+      'latitude' => array(
+        'type' => 'float',
+        'not null' => true,
+        'description' => 'latitude',
+      ),
+
+      'latitude' => array(
+        'type' => 'float',
+        'not null' => true,
+        'description' => 'latitude',
+      ),
+      'longitude' => array(
+        'type' => 'float',
+        'not null' => true,
+        'description' => 'longitude',
+      ),
+      'accuracy' => array(
+        'type' => 'int',
+        'not null' => false,
+        'description' => 'accuracy',
+      ),
+    ],
+    'primary key' => ['id'],
+  );
+  return $schema;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function govcms_jobs_uninstall(){
+  db_delete('govcms_jobs_location')
+    ->execute();
+  variable_del('govcms_jobs_api_username');
+  variable_del('govcms_jobs_api_password');
+  variable_del('govcms_jobs_base_uri');
+  variable_del('govcms_jobs_basic_auth_username');
+  variable_del('govcms_jobs_basic_auth_password');
+  variable_del('govcms_jobs_authorizatio');
+}
+
+/**
+ * @throws Exception
+ *
+ * Function to load initial postcodes used in apsjobs from csv
+ */
+function govcms_jobs_import_location()
+{
+  $data_file = drupal_get_path('module', 'govcms_jobs') . "/postcodes.csv";
+  $handle = fopen($data_file, 'r');
+  $row = fgetcsv($handle);
+  $columns = array();
+
+  foreach ($row as $i => $header) {
+    $columns[$i] = trim($header);
+  }
+
+  $records = array();
+  while ($row = fgetcsv($handle)) {
+    $record = array();
+    foreach ($row as $i => $field) {
+      if (($columns[$i] == 'postcode') && (strlen($field) <= 3)) {
+        $field = "0" . $field;
+      }
+      $govcms_jobs_location_field = $columns[$i];
+      $record[$govcms_jobs_location_field] = $field;
+    }
+    $record['title'] = $record['place_name'] . ', ' . $record['state_code'] . ', ' . $record['postcode'];
+    $records[] = $record;
+  }
+  fclose($handle);
+  foreach ($records as $id => $record) {
+    $location_updated = db_insert('govcms_jobs_location') // Table name no longer needs {}
+      ->fields(array(
+        'title'      => strtoupper($record['title']),
+        'postcode'   => $record['postcode'],
+        'place_name' => $record['place_name'],
+        'state_name' => $record['state_name'],
+        'state_code' => $record['state_code'],
+        'latitude'   => $record['latitude'],
+        'longitude'  => $record['longitude'],
+        'accuracy'   => $record['accuracy']? $record['accuracy']:null,
+      ))
+      ->execute();
+  }
+}
